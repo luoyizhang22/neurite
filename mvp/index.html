@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Neurite-Storm: 以人为本的AI头脑风暴工具" />
+    <meta name="theme-color" content="#6B46C1" />
+    <title>Neurite-Storm | AI头脑风暴工具</title>
+    <!-- Font preloading -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      #error-display {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        background: #ff6b6b;
+        color: white;
+        padding: 10px;
+        z-index: 9999;
+        font-family: monospace;
+        white-space: pre-wrap;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="error-display"></div>
+    <div id="root"></div>
+    <script type="module" src="/src/index.tsx"></script>
+    <script>
+      // 捕获并显示错误
+      window.onerror = function(message, source, lineno, colno, error) {
+        const errorDisplay = document.getElementById('error-display');
+        errorDisplay.style.display = 'block';
+        errorDisplay.textContent = `Error: ${message}\nSource: ${source}\nLine: ${lineno}:${colno}\n${error?.stack || ''}`;
+        return false;
+      };
+      
+      // 捕获未处理的 Promise 错误
+      window.addEventListener('unhandledrejection', function(event) {
+        const errorDisplay = document.getElementById('error-display');
+        errorDisplay.style.display = 'block';
+        errorDisplay.textContent = `Unhandled Promise Rejection: ${event.reason}`;
+      });
+    </script>
+  </body>
+</html> 

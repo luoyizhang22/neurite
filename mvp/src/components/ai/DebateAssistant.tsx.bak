@@ -1,0 +1,1509 @@
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  Box,
+  Button,
+  Collapse,
+  Divider,
+  Flex,
+  Heading,
+  Icon,
+  IconButton,
+  Radio,
+  RadioGroup,
+  Stack,
+  Tab,
+  TabList,
+  TabPanel,
+  TabPanels,
+  Tabs,
+  Text,
+  Textarea,
+  Tooltip,
+  VStack,
+  useColorModeValue,
+  useToast,
+  Badge,
+  HStack,
+  Progress,
+  Card,
+  CardHeader,
+  CardBody,
+  CardFooter,
+  Drawer,
+  DrawerBody,
+  DrawerHeader,
+  DrawerOverlay,
+  DrawerContent,
+  DrawerCloseButton,
+  useDisclosure,
+  Input,
+  InputGroup,
+  InputRightElement,
+  Slider,
+  SliderTrack,
+  SliderFilledTrack,
+  SliderThumb,
+  Select,
+  FormControl,
+  FormLabel,
+  FormHelperText,
+  Alert,
+  AlertIcon,
+  AlertTitle,
+  AlertDescription,
+  List,
+  ListItem,
+  ListIcon,
+  Tag,
+  TagLabel,
+  TagCloseButton,
+  Switch,
+  Spinner,
+  Image,
+  SimpleGrid,
+  Checkbox,
+  Link,
+  Code,
+  CircularProgress,
+  Circle
+} from '@chakra-ui/react';
+import {
+  FiArrowRight,
+  FiCheck,
+  FiCpu,
+  FiDownload,
+  FiFileText,
+  FiFilter,
+  FiPlus,
+  FiRefreshCw,
+  FiSend,
+  FiSettings,
+  FiThumbsDown,
+  FiThumbsUp,
+  FiZap,
+  FiGitBranch,
+  FiMaximize2,
+  FiMessageSquare,
+  FiSave,
+  FiRotateCcw,
+  FiHelpCircle,
+  FiShield,
+  FiExternalLink,
+  FiInfo
+} from 'react-icons/fi';
+import { DeleteIcon, AddIcon } from '@chakra-ui/icons';
+import ReactMarkdown from 'react-markdown';
+import aiService, { AIProvider } from '../../api/aiService';
+import { ContentExtractor, ExtractedContent } from '../../api/ContentExtractor';
+import { PromptBuilder, PromptOptions } from '../../api/PromptBuilder';
+import { INode as GraphINode } from '../../types/graph'; // 导入正确的INode类型
+
+// 本地使用的INode接口，兼容GraphINode
+interface INode {
+  id: string;
+  type: "text" | "link" | "image" | "ai" | "question" | "answer" | "debate" | "port" | "aiagent" | string;
+  position: { x: number; y: number };
+  content: string;
+  data?: any;
+  connectedTo?: string[];
+  metadata?: any;
+}
+
+// 辩论助手组件接口
+interface DebateAssistantProps {
+  isOpen: boolean;
+  onClose: () => void;
+  selectedNodes: GraphINode[]; // 使用导入的GraphINode类型
+  onAddNode?: (nodeData: any) => void;
+}
+
+// 添加一个模型类型接�?interface ModelOption {
+  id: string;
+  name: string;
+  type: 'local' | 'remote';
+  provider: string;
+  description?: string;
+}
+
+/**
+ * 辩论助手组件
+ * 
+ * 这个组件实现了一种辩证思维的AI辅助功能，允许用户：
+ * 1. 基于选中的节点内容生成多个不同角度的观点
+ * 2. 对这些观点进行思辨分析和对�? * 3. 生成综合性的思考，帮助用户形成更全面的理解
+ */
+const DebateAssistant: React.FC<DebateAssistantProps> = ({
+  isOpen,
+  onClose,
+  selectedNodes,
+  onAddNode
+}) => {
+  // 颜色设置
+  const bgColor = useColorModeValue('white', 'gray.800');
+  const borderColor = useColorModeValue('gray.200', 'gray.700');
+  const accentColor = useColorModeValue('purple.500', 'purple.300');
+  const highlightBg = useColorModeValue('purple.50', 'purple.900');
+  
+  // Toast通知
+  const toast = useToast();
+  
+  // 状态管�?  const [topic, setTopic] = useState('');
+  const [perspectives, setPerspectives] = useState<string[]>([]);
+  const [customPerspectives, setCustomPerspectives] = useState<string[]>([]);
+  const [newPerspective, setNewPerspective] = useState('');
+  const [isGeneratingPerspectives, setIsGeneratingPerspectives] = useState(false);
+  const [selectedPerspectives, setSelectedPerspectives] = useState<string[]>([]);
+  const [debateResult, setDebateResult] = useState('');
+  const [persuasiveView, setPersuasiveView] = useState('');
+  const [isGeneratingDebate, setIsGeneratingDebate] = useState(false);
+  const [currentStep, setCurrentStep] = useState(1);
+  const [debateStyle, setDebateStyle] = useState('balanced');
+  const [complexity, setComplexity] = useState(3);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [userFeedback, setUserFeedback] = useState<'positive' | 'negative' | null>(null);
+  const [extractedContents, setExtractedContents] = useState<ExtractedContent[]>([]);
+  
+  // 定义可用模型列表
+  const [availableModels, setAvailableModels] = useState<ModelOption[]>([
+    // 本地模型
+    { id: 'qwen2.5:7b', name: 'Qwen 2.5 7B', type: 'local', provider: 'ollama', description: '通义千问2.5 7B，适合中文辩论' },
+    { id: 'llama3:8b', name: 'Llama 3 8B', type: 'local', provider: 'ollama', description: '开源大模型，参数量较小' },
+    { id: 'llama3:70b', name: 'Llama 3 70B', type: 'local', provider: 'ollama', description: '开源大模型，性能较好' },
+    { id: 'mistral:7b', name: 'Mistral 7B', type: 'local', provider: 'ollama', description: '高性能开�?B模型' },
+    { id: 'mixtral:8x7b', name: 'Mixtral 8x7B', type: 'local', provider: 'ollama', description: '混合专家模型，性能优异' },
+    // 远程模型
+    { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', type: 'remote', provider: 'openai', description: 'OpenAI的中等性能模型' },
+    { id: 'gpt-4', name: 'GPT-4', type: 'remote', provider: 'openai', description: 'OpenAI的高性能模型' },
+    { id: 'claude-3-sonnet', name: 'Claude 3 Sonnet', type: 'remote', provider: 'anthropic', description: 'Anthropic的高性能模型' }
+  ]);
+
+  // 添加检测到的本地模型列�?  const [detectedLocalModels, setDetectedLocalModels] = useState<ModelOption[]>([]);
+  
+  // 添加高级设置状�?  const [advancedSettings, setAdvancedSettings] = useState({
+    model: 'qwen2.5:7b',
+    temperature: 0.7,
+    provider: 'ollama'
+  });
+  
+  // 高级设置
+  const [promptOptions, setPromptOptions] = useState<Partial<PromptOptions>>({
+    temperature: 0.7,
+    detailLevel: 'detailed',
+    outputFormat: 'markdown',
+    language: 'zh'
+  });
+  
+  // 添加缺失的状态变�?  const [isTestingOllama, setIsTestingOllama] = useState(false);
+  
+  // 当选中的节点改变时更新话题
+  useEffect(() => {
+    if (selectedNodes.length > 0) {
+      // 使用ContentExtractor提取节点内容
+      const contents = ContentExtractor.extractMultipleContents(selectedNodes);
+      setExtractedContents(contents);
+      
+      // 从第一个节点提取内容作为讨论话�?      const firstNodeContent = contents[0];
+      setTopic(firstNodeContent.title || firstNodeContent.text.substring(0, 50));
+      
+      // 重置状�?      setPerspectives([]);
+      setCustomPerspectives([]);
+      setSelectedPerspectives([]);
+      setDebateResult('');
+      setPersuasiveView('');
+      setCurrentStep(1);
+    }
+  }, [selectedNodes]);
+  
+  // 修复提取节点内容的函�?  const getExtractedContent = () => {
+    try {
+      // 直接使用组件中的selectedNodes状�?      if (!selectedNodes || selectedNodes.length === 0) {
+        return { content: '', imageUrl: '' };
+      }
+      
+      // 使用第一个节�?      const node = selectedNodes[0];
+      
+      // 安全地提取内�?      const nodeData = node && node.data ? node.data : {};
+      let content = '';
+      let imageUrl = '';
+      
+      if (nodeData && typeof nodeData === 'object') {
+        // 使用类型断言访问可能不存在的属�?        const typedNodeData = nodeData as any;
+        if (typedNodeData.content && typeof typedNodeData.content === 'string') {
+          content = typedNodeData.content;
+        }
+        if (typedNodeData.imageUrl && typeof typedNodeData.imageUrl === 'string') {
+          imageUrl = typedNodeData.imageUrl;
+        }
+      }
+      
+      return { content, imageUrl };
+    } catch (error) {
+      console.error("提取节点内容时出�?", error);
+      return { content: '', imageUrl: '' };
+    }
+  };
+
+  // 修复checkExtractedContent方法
+  const checkExtractedContent = () => {
+    // 使用安全的方式调用可能为undefined的对�?    try {
+      const { content } = getExtractedContent();
+      
+      if (!content || content.trim() === '') {
+        toast({
+          title: "未找到内�?,
+          description: "请选择包含文本内容的节�?,
+          status: "warning",
+          duration: 3000,
+          isClosable: true,
+        });
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error("检查内容时出错:", error);
+      toast({
+        title: "检查内容出�?,
+        description: "处理节点内容时发生错�?,
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
+      return false;
+    }
+  };
+  
+  // 从文本中提取观点
+  const extractPerspectivesFromText = (text: string): string[] => {
+    // 匹配"观点X�?�?观点X:"格式的行
+    const regex = /观点\s*\d+\s*[:：]\s*(.*)/g;
+    const matches = [...text.matchAll(regex)];
+    
+    if (matches.length > 0) {
+      return matches.map(match => match[0].trim());
+    }
+    
+    // 如果没有匹配到标准格式，尝试按行分割并过�?    const lines = text.split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0 && (
+        line.includes('观点') || 
+        line.includes('支持') || 
+        line.includes('反对') || 
+        line.includes('中立') ||
+        /^\d+\./.test(line) // 匹配"1."�?2."等开头的�?      ));
+    
+    return lines.length > 0 ? lines : [
+      "观点1: 支持该论点，认为这种方法能够有效解决问题",
+      "观点2: 部分支持，但对实施过程中的某些环节持保留态度",
+      "观点3: 完全反对，认为这种方法从根本上存在缺�?,
+      "观点4: 提出替代性解决方案，认为有更优的方法",
+      "观点5: 质疑前提假设，认为问题定义本身需要重新考虑"
+    ];
+  };
+  
+  // 生成多角度观�?  const generatePerspectives = async () => {
+    if (!topic.trim()) {
+      toast({
+        title: "请输入讨论话�?,
+        status: "warning",
+        duration: 3000,
+        isClosable: true,
+      });
+      return;
+    }
+    
+    setIsGeneratingPerspectives(true);
+    
+    try {
+      // 首先测试Ollama连接
+      const modelToUse = advancedSettings.model || 'qwen2.5:7b';
+      
+      console.log(`准备使用模型: ${modelToUse} 生成观点`);
+      
+      // 检查Ollama连接和模型可用�?      try {
+        // 显示检查连接的提示
+        const checkingToast = toast({
+          title: "检查模型连�?,
+          description: `正在检�?${modelToUse} 模型是否可用...`,
+          status: "loading",
+          duration: null,
+          isClosable: false,
+        });
+        
+        // 测试连接
+        const connectionSuccess = await aiService.testOllamaConnection(modelToUse, true);
+        
+        // 关闭检查提�?        toast.close(checkingToast);
+        
+        if (!connectionSuccess) {
+          throw new Error(`模型 ${modelToUse} 不可用，请确保Ollama已安装并下载该模型`);
+        }
+      } catch (connError: any) {
+        // 转换为用户友好的错误
+        let errorMessage = connError.message;
+        
+        if (errorMessage.includes('404') || errorMessage.includes('not found')) {
+          errorMessage = `找不到模�?"${modelToUse}"，请通过命令安装: ollama pull ${modelToUse}`;
+        }
+        
+        throw new Error(errorMessage);
+      }
+      
+      // 获取选中节点的内�?      const contents = ContentExtractor.extractMultipleContents(selectedNodes);
+      
+      // 提取原始内容用于背景信息
+      let backgroundInfo = '';
+      if (contents.length > 0) {
+        backgroundInfo = contents.map(content => {
+        return `- ${content.title || '节点'}: ${content.text.substring(0, 150)}${content.text.length > 150 ? '...' : ''}`;
+      }).join('\n');
+      }
+
+      // 构建系统提示�?      const systemPrompt = `你是一个擅长思辨分析的AI助手，能从多个不同角度看待问题并提出独特的论点�?你的任务是针对给定的话题，生成多个不同的、不重复的、高质量的论点。每个论点应具有独特的视角和论证路径。`;
+      
+      // 构建用户提示�?      let userPrompt = `请针对以下话题，提出5-7个独特的、互不重复的思辨性论�?\n\n话题: ${topic}\n\n`;
+      
+      // 添加背景信息
+      if (backgroundInfo) {
+        userPrompt += `以下是与话题相关的背景信息，请参考这些信息生成更有针对性的论点:\n${backgroundInfo}\n\n`;
+      }
+      
+      userPrompt += `要求:
+1. 每个论点应该有清晰的立场和独特的论证角度
+2. 论点之间应有实质性区别，避免仅仅是相似观点的不同表述
+3. 每个论点应简明扼要，在两句话以内表达核心观点
+4. 确保论点涵盖多种不同立场，而不仅仅是正反两�?5. 不要使用编号，每个观点单独一�?6. 直接列出观点，不要包�?观点1:"这样的前缀`;
+
+      console.log('开始向AI服务发送请�?..');
+
+      // 使用aiService发送请�?      const response = await aiService.sendRequest({
+        model: modelToUse,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.8, // 使用较高的温度以获得更多样化的论�?        maxTokens: 1024,
+        provider: 'ollama',
+        stream: false
+      });
+      
+      console.log('AI响应成功:', response.text.substring(0, 100) + '...');
+
+      // 从回复中提取观点
+      const extractedPerspectives = extractPerspectivesFromText(response.text);
+      
+      if (extractedPerspectives.length === 0) {
+        throw new Error("无法提取有效的观�?);
+      }
+      
+      setPerspectives(extractedPerspectives);
+      
+      // 自动选择所有观点，不再只是�?�?      setSelectedPerspectives(extractedPerspectives);
+      
+      toast({
+        title: "成功生成多角度论�?,
+        description: `已生�?{extractedPerspectives.length}个不同视角的观点`,
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+      });
+      
+      // 进入下一�?      setCurrentStep(1);
+    } catch (error) {
+      console.error("生成观点失败:", error);
+      
+      // 用户友好的错误处�?      let errorMessage = "生成观点时发生错�?;
+      let errorDetails = "";
+      
+      if (error instanceof Error) {
+        if (error.message.includes('404') || error.message.includes('not found')) {
+          errorMessage = "找不到指定的AI模型";
+          errorDetails = `请确保Ollama已安装并运行，且已下�?${advancedSettings.model || 'qwen2.5:7b'} 模型`;
+        } else if (error.message.includes('ECONNREFUSED') || error.message.includes('无法连接')) {
+          errorMessage = "无法连接到Ollama服务";
+          errorDetails = "请确保Ollama服务已启动并正常运行";
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      toast({
+        title: "生成观点失败",
+        description: errorDetails || errorMessage,
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
+    } finally {
+      setIsGeneratingPerspectives(false);
+    }
+  };
+  
+  // 添加自定义观�?  const addCustomPerspective = () => {
+    if (!newPerspective.trim()) return;
+    
+    const perspective = `自定义观点：${newPerspective}`;
+    setCustomPerspectives([...customPerspectives, perspective]);
+    
+    // 自动选择新添加的观点
+    setSelectedPerspectives([...selectedPerspectives, perspective]);
+    
+    // 重置输入�?    setNewPerspective('');
+    
+    // 显示成功提示
+    toast({
+      title: "已添加自定义观点",
+      description: "您的观点已添加到列表中并自动选择",
+      status: "success",
+      duration: 3000,
+      isClosable: true,
+    });
+  };
+  
+  // 处理观点选择
+  const togglePerspective = (perspective: string) => {
+    if (selectedPerspectives.includes(perspective)) {
+      setSelectedPerspectives(selectedPerspectives.filter(p => p !== perspective));
+    } else {
+      setSelectedPerspectives([...selectedPerspectives, perspective]);
+    }
+  };
+  
+  // 测试Ollama连接
+  const testOllamaConnection = async () => {
+    try {
+      setIsTestingOllama(true);
+      
+      // 显示连接测试中的toast
+      const loadingToast = toast({
+        title: "测试连接�?,
+        description: "正在测试Ollama连接，请稍�?..",
+        status: "loading",
+        duration: null,
+        isClosable: false,
+      });
+      
+      // 记录开始时�?      const startTime = Date.now();
+      
+      try {
+        // 获取选择的模型名�?        const modelName = advancedSettings.model || 'qwen2.5:7b';
+        
+        // 使用aiService测试连接
+        const isConnected = await aiService.testOllamaConnection(modelName, true);
+        
+        // 计算响应时间
+        const responseTime = Date.now() - startTime;
+        
+        if (isConnected) {
+          // 关闭加载toast
+          toast.close(loadingToast);
+          
+          // 显示成功toast
+          toast({
+            title: "连接成功",
+            description: `Ollama连接正常! 响应时间: ${responseTime}ms`,
+            status: "success",
+            duration: 3000,
+            isClosable: true,
+          });
+          
+          // 更新高级设置
+          setAdvancedSettings({
+            ...advancedSettings,
+            provider: 'ollama'
+          });
+          
+          return true;
+        } else {
+          // 这种情况理论上不应该发生，因为testOllamaConnection在失败时会抛出异�?          toast.close(loadingToast);
+          
+          toast({
+            title: "连接失败",
+            description: "无法连接到Ollama服务，请确保服务已启�?,
+            status: "error",
+            duration: 5000,
+            isClosable: true,
+          });
+          
+          return false;
+        }
+      } catch (error: any) {
+        // 关闭加载toast
+        toast.close(loadingToast);
+        
+        // 处理连接测试过程中的错误
+        console.error("Ollama连接测试失败:", error);
+        
+        // 构造用户友好的错误消息
+        let errorMessage = '连接失败: ';
+        const modelName = advancedSettings.model || 'qwen2.5:7b'; // 定义modelName
+        
+        if (error.message.includes('ECONNREFUSED') || error.message.includes('连接被拒�?)) {
+          errorMessage += '无法连接到Ollama服务，请确保服务已启�?(命令: ollama serve)';
+        } else if (error.message.includes('ETIMEDOUT') || error.message.includes('超时')) {
+          errorMessage += '连接超时，服务响应时间过�?;
+        } else if (error.message.includes('Network Error') || error.message.includes('网络错误')) {
+          errorMessage += '网络错误，请检查Ollama服务状态和网络连接';
+        } else if (error.message.includes('not found') || error.message.includes('404')) {
+          errorMessage += `找不到模�?"${modelName}"，请先下载模�?(命令: ollama pull ${modelName})`;
+        } else {
+          // 使用原始错误消息
+          errorMessage = error.message;
+        }
+        
+        toast({
+          title: "连接测试失败",
+          description: errorMessage,
+          status: "error",
+          duration: 5000,
+          isClosable: true,
+        });
+        
+        return false;
+      }
+    } catch (error) {
+      console.error("测试连接过程中出�?", error);
+      
+      toast({
+        title: "连接测试失败",
+        description: "发生意外错误，请检查控制台日志",
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
+      
+      return false;
+    } finally {
+      setIsTestingOllama(false);
+    }
+  };
+  
+  // 生成辩论分析
+  const generateDebateAnalysis = async () => {
+    if (selectedPerspectives.length < 2) {
+      toast({
+        title: "观点不足",
+        description: "请至少选择2个观点进行分�?,
+        status: "warning",
+        duration: 3000,
+        isClosable: true,
+      });
+      return;
+    }
+    
+    setIsGeneratingDebate(true);
+    setDebateResult('');
+    setPersuasiveView('');
+    
+    try {
+      // 先测试所选模型是否可�?      const modelToUse = advancedSettings.model || 'qwen2.5:7b';
+      
+      // 显示生成提示
+      const generatingToast = toast({
+        title: "准备生成辩论分析",
+        description: `正在使用 ${modelToUse} 模型，请稍�?..`,
+        status: "loading",
+        duration: null,
+        isClosable: false,
+      });
+      
+      // 检查连接和模型
+      try {
+        const connectionTest = await aiService.testOllamaConnection(modelToUse, true);
+        if (!connectionTest) {
+          throw new Error(`模型 ${modelToUse} 不可用`);
+        }
+      } catch (connError: any) {
+        let errorMessage = connError.message || `模型 ${modelToUse} 连接失败`;
+        
+        // 关闭加载提示
+        toast.close(generatingToast);
+        
+        if (errorMessage.includes('not found') || errorMessage.includes('404')) {
+          toast({
+            title: "模型不可�?,
+            description: `请先安装模型: ollama pull ${modelToUse}`,
+            status: "error", 
+            duration: 5000,
+            isClosable: true,
+          });
+        } else {
+          toast({
+            title: "连接失败",
+            description: errorMessage,
+            status: "error",
+            duration: 5000, 
+            isClosable: true,
+          });
+        }
+        
+        setIsGeneratingDebate(false);
+        return;
+      }
+      
+      const styleDescription = debateStyle === 'balanced' 
+        ? '平衡客观的分�? 
+        : debateStyle === 'critical' 
+        ? '批判性的分析' 
+        : '创新型的分析';
+      
+      const complexityStyle = complexity <= 2 
+        ? '简明扼�? 
+        : complexity >= 4 
+        ? '深入细致' 
+        : '适度详细';
+      
+      // 构建更清晰的系统提示
+      let systemPrompt = `你是一个专业的辩论分析专家。你将分析多个关�?${topic}"的不同观点，并基于这些观点提�?{styleDescription}�?请确保分�?{complexityStyle}，不要忽略任何重要观点�?
+在分析中，你需要做到：
+1. 明确指出你在回应哪个具体观点，使�?关于观点X的论�?.."这样的格�?2. 针对每个观点的具体内容进行回应，而不是泛泛而谈
+3. 在不同观点之间建立逻辑联系，指出它们如何互相支持或反驳
+4. 展示思考链，说明你如何从一个观点推导出结论`;
+      
+      // 根据复杂度调整系统提�?      if (complexity >= 4) {
+        systemPrompt += `
+你的分析需�?
+1. 深入评估每个观点的论据和依据
+2. 识别观点间的深层次联系和冲突
+3. 考虑每个观点的社会、经济和伦理影响
+4. 提供基于多角度分析的综合见解
+5. 针对每个观点提出可能的反驳和支持论据`;
+      } else if (complexity >= 2) {
+        systemPrompt += `
+你的分析需�?
+1. 清晰解释每个观点的核心论�?2. 找出观点间的主要共识和差�?3. 评估每个观点的优势和局限�?4. 提供平衡的总结见解
+5. 指出每个观点可能忽略的方面`;
+      } else {
+        systemPrompt += `
+你的分析需�?
+1. 简述每个观点的要点
+2. 找出观点间的基本联系
+3. 给出简洁的优缺点评�?4. 提供简明的总结
+5. 简要说明哪些观点更有说服力`;
+      }
+      
+      // 构建用户提示
+      let userPrompt = `请分析以下关�?${topic}"的不同观点：\n\n`;
+      
+      // 添加所有选定的观点，并为每个观点添加编号以便引用
+      selectedPerspectives.forEach((perspective, index) => {
+        userPrompt += `观点${index + 1}�?{perspective}\n\n`;
+      });
+      
+      userPrompt += `请按照以下结构提供分析：
+1. 各观点的主要论点和依据（针对每个观点单独分析�?2. 观点之间的冲突和共识（明确指出哪些观点之间存在冲突或共识�?3. 每个观点的潜在优势和局限性（针对性分析每个观点）
+${complexity > 3 ? '4. 各观点在不同情境中的适用性（说明每个观点适用的具体场景）\n5. ' : '4. '}综合分析和可能的调和点（如何整合不同观点的优势）
+
+格式要求�?1. 使用Markdown格式，为每个部分添加标题和小标题
+2. 在分析中明确引用观点编号，如"关于观点1..."
+3. 对于每个观点的分析，先引用其核心内容，再进行评析
+4. 在观点间建立明确的逻辑联系，说明它们如何互相支持或反驳
+5. 分点说明关键内容，确保回答完整但不冗余`;
+
+      console.log('生成辩论分析参数:', { 
+        style: styleDescription, 
+        complexity: complexityStyle,
+        model: advancedSettings.model,
+        topic: topic.substring(0, 30) + (topic.length > 30 ? '...' : ''),
+        perspectivesCount: selectedPerspectives.length
+      });
+      
+      // 根据复杂度和观点数量调整最大token�?      const maxTokens = Math.min(4096, 1024 + (complexity * 256) + (selectedPerspectives.length * 128));
+      
+      // 显示生成中提示，添加进度指示�?      const [analysisProgress, setAnalysisProgress] = useState(0);
+      const progressInterval = setInterval(() => {
+        setAnalysisProgress(prev => {
+          // 由于无法获取真实进度，使用模拟进�?          // 缓慢前进�?0%，剩下的10%留给实际完成�?          if (prev < 90) {
+            return prev + (90 - prev) * 0.1;
+          }
+          return prev;
+        });
+      }, 1000);
+      
+      // 关闭准备中提�?              toast.close(generatingToast);
+      
+      // 使用aiService发送请�?      try {
+        const response = await aiService.sendRequest({
+          model: advancedSettings.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          temperature: advancedSettings.temperature,
+          maxTokens: maxTokens,
+          provider: advancedSettings.provider as any,
+          stream: false
+        });
+        
+        // 清除进度模拟
+        clearInterval(progressInterval);
+        setAnalysisProgress(100);
+        
+        // 设置分析结果
+        setDebateResult(response.text);
+        
+        // 更新步骤
+        setCurrentStep(2);
+        
+        // 设置说服力最强的观点（暂设为第一个）
+        if (selectedPerspectives.length > 0) {
+          setPersuasiveView(selectedPerspectives[0]);
+        }
+        
+        // 显示成功消息
+        toast({
+          title: "分析生成成功",
+          description: "辩论分析已生成，您可以查看结果并保存",
+        status: "success",
+          duration: 3000,
+          isClosable: true,
+        });
+      } catch (apiError) {
+        // 清除进度模拟
+        clearInterval(progressInterval);
+        throw apiError; // 重新抛出错误供外层catch捕获
+      }
+    } catch (error: any) {
+      console.error('生成辩论分析失败:', error);
+      
+      // 用户友好的错误处�?      let errorMessage = "生成分析失败";
+      let errorDetails = "";
+      
+      if (error.message) {
+        if (error.message.includes('404') || error.message.includes('not found')) {
+          errorMessage = "找不到指定的AI模型";
+          errorDetails = `请确保已安装 ${advancedSettings.model} 模型`;
+        } else if (error.message.includes('连接被拒�?) || error.message.includes('refused')) {
+          errorMessage = "无法连接到AI服务";
+          errorDetails = "请确保服务已启动并正常运�?;
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      toast({
+        title: errorMessage,
+        description: errorDetails || "请检查网络连接和服务状�?,
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
+    } finally {
+      setIsGeneratingDebate(false);
+    }
+  };
+  
+      // 创建辩论节点
+  const createDebateNode = () => {
+    if (isGeneratingDebate) return;
+    
+    setIsGeneratingDebate(true);
+    
+    try {
+      console.log('开始保存辩论分析到图谱');
+      
+      // 创建父节�?- 辩论分析结果节点
+      const debateNode = {
+        id: `debate_${Date.now()}`,
+        type: 'debate',
+        position: { x: 0, y: 0 },
+        content: `# ${topic}\n\n${debateResult}`,
+        data: {
+          label: `辩论分析: ${topic}`,
+          topic,
+          perspectives: selectedPerspectives,
+          result: debateResult,
+          style: debateStyle,
+          settings: {
+            debateStyle,
+            complexity,
+            model: advancedSettings.model || 'qwen2.5:7b'
+          },
+          sourceData: {
+            contentNodeIds: selectedNodes.map(node => node.id),
+            contentPreviews: extractedContents.length > 0 
+              ? extractedContents.map(content => ({
+                id: content.originalNode.id,
+                type: content.type,
+                title: content.title || '未命�?,
+                preview: content.text.substring(0, 100) + (content.text.length > 100 ? '...' : '')
+              }))
+              : selectedNodes.map(node => {
+                // 安全地提取节点预览内�?                let previewTitle = '未命名节�?;
+                let previewText = '';
+                
+                if (node.data) {
+                  if (typeof node.data.title === 'string') {
+                    previewTitle = node.data.title;
+                  } else if (typeof node.data.label === 'string') {
+                    previewTitle = node.data.label;
+                  }
+                  
+                  if (typeof node.data.content === 'string') {
+                    previewText = node.data.content;
+                  } else if (typeof node.data.response === 'string') {
+                    previewText = node.data.response;
+                  } else if (typeof node.data.topic === 'string') {
+                    previewText = node.data.topic;
+                  }
+                }
+                
+                return {
+                id: node.id,
+                type: node.type || 'text',
+                  title: previewTitle,
+                  preview: previewText.substring(0, 100) + (previewText.length > 100 ? '...' : '')
+                };
+              }),
+            generatedAt: new Date().toISOString(),
+            analysisMetrics: {
+              perspectiveCount: selectedPerspectives.length,
+              analysisLength: debateResult.length,
+              contentComplexity: complexity > 3 ? 'high' : complexity > 1 ? 'medium' : 'low'
+            }
+          }
+        }
+      };
+      
+      // 调用回调函数添加节点，添加条件检�?      if (onAddNode) {
+        onAddNode(debateNode);
+      } else {
+        console.warn("onAddNode回调未提供，无法添加节点到图�?);
+      }
+      
+      // 添加到分析历史记录中
+      const analysisRecord = {
+        id: `debate_analysis_${Date.now()}`,
+        topic,
+        perspectives: selectedPerspectives,
+        result: debateResult,
+        persuasiveView: persuasiveView || '',
+        settings: {
+          debateStyle,
+          complexity,
+          model: advancedSettings.model || 'qwen2.5:7b'
+        },
+        timestamp: new Date().toISOString()
+      };
+      
+      // 存储到localStorage中，限制最多保�?0条记�?      try {
+        const historyKey = 'debate_analysis_history';
+        const existingHistoryStr = localStorage.getItem(historyKey);
+        let existingHistory = existingHistoryStr ? JSON.parse(existingHistoryStr) : [];
+        
+        // 确保existingHistory是数�?        if (!Array.isArray(existingHistory)) {
+          console.warn('历史记录格式不正确，重置为空数组');
+          existingHistory = [];
+        }
+        
+        existingHistory.unshift(analysisRecord);
+        
+        // 限制历史记录数量
+        if (existingHistory.length > 10) {
+          existingHistory.length = 10;
+        }
+        
+        localStorage.setItem(historyKey, JSON.stringify(existingHistory));
+      } catch (storageError) {
+        console.error('保存分析历史失败:', storageError);
+        // 存储失败不影响主要功能，继续执行
+      }
+      
+      // 显示成功消息
+      toast({
+        title: "辩论分析已添�?,
+        description: "辩论分析节点已成功添加到图谱�?,
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+      });
+      
+      // 关闭对话�?      onClose();
+    } catch (error) {
+      console.error('创建辩论节点失败:', error);
+      toast({
+        title: "创建节点失败",
+        description: error instanceof Error ? error.message : "未知错误",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setIsGeneratingDebate(false);
+    }
+  };
+  
+  // 导出分析
+  const exportAnalysis = () => {
+    try {
+      const blob = new Blob([`# ${topic}\n\n${debateResult}`], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `辩论分析-${topic.substring(0, 20)}.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast({
+        title: "分析已导出为Markdown文件",
+        status: "success",
+        duration: 2000,
+      });
+    } catch (error) {
+      toast({
+        title: "导出失败",
+        description: "请稍后重�?,
+        status: "error",
+        duration: 2000,
+      });
+    }
+  };
+  
+  // 重新开�?  const restart = () => {
+    setCurrentStep(1);
+    setPerspectives([]);
+    setCustomPerspectives([]);
+    setSelectedPerspectives([]);
+    setDebateResult('');
+    setPersuasiveView('');
+    setUserFeedback(null);
+  };
+  
+  // 添加获取本地模型列表的函�?  const fetchLocalModels = async () => {
+    try {
+      console.log("获取本地模型列表...");
+      // 显示加载提示
+      const loadingToast = toast({
+        title: "检查本地模�?,
+        description: "正在从Ollama获取可用模型列表...",
+        status: "loading",
+        duration: null,
+        isClosable: false,
+      });
+      
+      // 使用aiService的方法获取可用模�?      let localModels: ModelOption[] = [];
+      try {
+        // 使用类型断言来避免类型错�?        const models = await aiService.getAvailableModels();
+        if (Array.isArray(models) && models.length > 0) {
+          // 筛选Ollama提供商的模型
+          const ollamaModels = models.filter((model: any) => {
+            if (typeof model === 'object' && model.provider === 'ollama') {
+              return true;
+            }
+            if (typeof model === 'string') {
+              // 使用字符串的includes方法检�?              return String(model).includes(':');
+            }
+            return false;
+          });
+          
+          localModels = ollamaModels.map((model: any) => {
+            if (typeof model === 'string') {
+              return {
+                id: model,
+                name: model,
+                type: 'local' as const,
+                provider: 'ollama',
+                description: `Ollama本地模型`
+              };
+            } else {
+              return {
+                id: typeof model.id === 'string' ? model.id : '',
+                name: typeof model.name === 'string' ? model.name : '',
+                type: 'local' as const,
+                provider: 'ollama',
+                description: `Ollama本地模型`
+              };
+            }
+          });
+        }
+      } catch (error) {
+        console.error("获取Ollama模型失败:", error);
+      }
+      
+      // 关闭加载提示
+      toast.close(loadingToast);
+      
+      // 更新检测到的本地模型列�?      setDetectedLocalModels(localModels);
+      
+      // 如果有本地模型，显示成功提示
+      if (localModels.length > 0) {
+        toast({
+          title: "已获取本地模�?,
+          description: `发现${localModels.length}个Ollama本地模型`,
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+        });
+      } else {
+        // 如果没有发现本地模型，显示警�?        toast({
+          title: "未找到本地模�?,
+          description: "请确保Ollama已启动并安装了模�?,
+          status: "warning",
+          duration: 5000,
+          isClosable: true,
+        });
+      }
+    } catch (error) {
+      console.error("获取本地模型列表失败:", error);
+      toast({
+        title: "获取模型列表失败",
+        description: error instanceof Error ? error.message : "未知错误",
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
+    }
+  };
+
+  // 在组件加载时尝试获取本地模型列表
+  useEffect(() => {
+    if (isOpen) {
+      fetchLocalModels();
+    }
+  }, [isOpen]);
+  
+  // 修改高级设置渲染部分
+  const renderAdvancedSettings = () => {
+    return (
+      <Card mb={4}>
+        <CardHeader>
+          <Heading size="md">高级设置</Heading>
+        </CardHeader>
+        <CardBody>
+          <VStack spacing={4} align="stretch">
+            {/* 模型选择部分 */}
+            <FormControl>
+              <FormLabel>选择模型</FormLabel>
+              <Select
+                value={advancedSettings.model}
+                onChange={(e) => setAdvancedSettings({...advancedSettings, model: e.target.value})}
+              >
+                <option value="gpt-4">GPT-4 (OpenAI)</option>
+                <option value="gpt-3.5-turbo">GPT-3.5 Turbo (OpenAI)</option>
+                <option value="qwen2.5:7b">Qwen 2.5 7B (本地)</option>
+                <option value="llama3:8b">Llama 3 8B (本地)</option>
+                <option value="mistral:7b">Mistral 7B (本地)</option>
+              </Select>
+              <FormHelperText>
+                本地模型需要安装Ollama并下载相应模�?              </FormHelperText>
+            </FormControl>
+            
+            {/* 刷新本地模型按钮 */}
+            <Button onClick={fetchLocalModels} colorScheme="blue" variant="outline">
+              刷新本地模型列表
+            </Button>
+            
+            {/* 辩论类型选择 */}
+            <FormControl>
+              <FormLabel>辩论风格</FormLabel>
+              <RadioGroup value={debateStyle} onChange={(value) => setDebateStyle(value as DebateStyle)}>
+                <Stack direction="row">
+                  <Radio value="academic">学术�?/Radio>
+                  <Radio value="socratic">苏格拉底�?/Radio>
+                  <Radio value="creative">创意�?/Radio>
+                </Stack>
+              </RadioGroup>
+            </FormControl>
+            
+            {/* 复杂度滑�?*/}
+            <FormControl>
+              <FormLabel>复杂�? {(advancedSettings.temperature * 10).toFixed(1)}</FormLabel>
+              <Slider
+                value={advancedSettings.temperature}
+                min={0.1}
+                max={1.0}
+                step={0.1}
+                onChange={(val) => setAdvancedSettings({...advancedSettings, temperature: val})}
+              >
+                <SliderTrack>
+                  <SliderFilledTrack />
+                </SliderTrack>
+                <SliderThumb />
+              </Slider>
+            </FormControl>
+          </VStack>
+        </CardBody>
+      </Card>
+    );
+  };
+
+  // 修改renderStepContent中第一步的内容，优化观点生成和选择
+  const renderPerspectivesStep = () => {
+    return (
+      <VStack spacing={6} align="stretch" mt={4}>
+        <Box>
+          <Text fontWeight="medium" mb={2}>讨论话题�?/Text>
+          <Textarea
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            placeholder="输入您想要进行辩论式思考的话题..."
+            size="md"
+            mb={4}
+          />
+          
+          {/* 显示选中的节点信�?*/}
+          {selectedNodes.length > 0 && (
+            <Box mb={4}>
+              <Text fontWeight="medium" mb={2}>选中的节点：</Text>
+              <SimpleGrid columns={[1, 2]} spacing={2} mb={3}>
+                {selectedNodes.map(node => {
+                  // 提取节点内容
+                  const content = (() => {
+                    let contentText = '';
+                    let imageUrl = undefined;
+                    
+                    // 安全地访问节点属性并获取内容
+                    if (node.data) {
+                      if (typeof node.data.content === 'string') {
+                        contentText = node.data.content;
+                      } else if (typeof node.data.response === 'string') {
+                        contentText = node.data.response;
+                      } else if (typeof node.data.topic === 'string') {
+                        contentText = node.data.topic;
+                      } else if (typeof node.data.title === 'string') {
+                        contentText = node.data.title;
+                      } else if (typeof node.data.caption === 'string') {
+                        contentText = node.data.caption;
+                        if (typeof node.data.url === 'string') {
+                          imageUrl = node.data.url;
+                        }
+                      } else if (typeof node.data === 'string') {
+                        contentText = node.data;
+                      } else {
+                        // 尝试JSON序列化对�?                        try {
+                          contentText = JSON.stringify(node.data).substring(0, 100);
+                        } catch {
+                          contentText = '无法读取内容';
+                        }
+                      }
+                    } else {
+                      contentText = '无内�?;
+                    }
+                    
+                    return { text: contentText, imageUrl };
+                  })();
+                  
+                  return (
+                    <Box 
+                      key={node.id} 
+                      borderWidth="1px" 
+                      borderRadius="md" 
+                      overflow="hidden" 
+                      p={2}
+                      bg={useColorModeValue('gray.50', 'gray.800')}
+                    >
+                    {content.imageUrl && (
+                          <Image 
+                        src={content.imageUrl} 
+                            alt="节点图片" 
+                            maxH="80px" 
+                            mx="auto" 
+                            mb={2} 
+                            objectFit="cover"
+                          />
+                        )}
+                        <Text fontSize="sm" noOfLines={2}>
+                          {typeof content.text === 'string' ? 
+                            (content.text.substring(0, 50) + (content.text.length > 50 ? '...' : '')) : 
+                            '内容格式不支�?
+                          }
+                        </Text>
+                      </Box>
+                    );
+                  })}
+                </SimpleGrid>
+              )}
+              
+          <HStack>
+              <Button
+                colorScheme="purple"
+              leftIcon={<Icon as={FiZap} />}
+                onClick={generatePerspectives}
+                isLoading={isGeneratingPerspectives}
+                loadingText="生成�?.."
+                mb={2}
+              flex="1"
+              >
+                生成多角度观�?              </Button>
+            <IconButton
+              aria-label="高级设置"
+              icon={<Icon as={FiSettings} />}
+              variant="outline"
+              onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+            />
+          </HStack>
+        </Box>
+        
+        {/* 高级设置折叠面板 */}
+        <Collapse in={isSettingsOpen} animateOpacity>
+          {renderAdvancedSettings()}
+        </Collapse>
+        
+        {/* 观点选择区域 - 改进为卡片式UI */}
+        {perspectives.length > 0 && (
+          <Box borderWidth="1px" borderRadius="lg" p={4} bg={useColorModeValue('gray.50', 'gray.700')}>
+            <Flex justify="space-between" align="center" mb={3}>
+              <Heading size="sm">选择要分析的观点�?/Heading>
+              <HStack>
+              <Button
+                  size="xs" 
+                  onClick={() => setSelectedPerspectives(perspectives)}
+                  variant="outline"
+                >
+                  全�?              </Button>
+                <Button 
+                  size="xs" 
+                  onClick={() => setSelectedPerspectives([])}
+                  variant="outline"
+                >
+                  取消全�?                </Button>
+              </HStack>
+            </Flex>
+            
+            <SimpleGrid columns={[1, null, 2]} spacing={3} mb={4}>
+              {perspectives.map((perspective, index) => (
+                <Box 
+                  key={index}
+                  borderWidth="1px"
+                  borderRadius="md"
+                  p={3}
+                  cursor="pointer"
+                  onClick={() => togglePerspective(perspective)}
+                  bg={selectedPerspectives.includes(perspective) 
+                    ? highlightBg 
+                    : useColorModeValue('white', 'gray.800')
+                  }
+                  borderColor={selectedPerspectives.includes(perspective)
+                    ? accentColor
+                    : borderColor
+                  }
+                  _hover={{
+                    borderColor: accentColor,
+                    boxShadow: 'sm'
+                  }}
+                  transition="all 0.2s"
+                >
+                  <Flex align="flex-start">
+                    <Checkbox 
+                      isChecked={selectedPerspectives.includes(perspective)}
+                      onChange={() => togglePerspective(perspective)}
+                      colorScheme="purple"
+                      mr={3}
+                      mt={1}
+                    />
+                    <Text>{perspective}</Text>
+                  </Flex>
+                </Box>
+              ))}
+            </SimpleGrid>
+                    
+            {/* 自定义观点输入框 */}
+                    <Box>
+              <Text fontSize="sm" fontWeight="medium" mb={2}>添加自定义观点：</Text>
+              <Flex>
+                <Input
+                  placeholder="输入您的观点..."
+                  value={newPerspective}
+                  onChange={(e) => setNewPerspective(e.target.value)}
+                  mr={2}
+                  flex="1"
+                />
+                <Button
+                  onClick={addCustomPerspective}
+                  colorScheme="blue"
+                  isDisabled={!newPerspective.trim()}
+                >
+                  添加
+                </Button>
+              </Flex>
+                    </Box>
+                    
+            {/* 开始分析按�?*/}
+            <Button
+              mt={4}
+              colorScheme="green"
+              size="lg"
+              width="full"
+              onClick={generateDebateAnalysis}
+              isDisabled={selectedPerspectives.length < 2}
+              isLoading={isGeneratingDebate}
+              loadingText="分析�?.."
+              leftIcon={<Icon as={FiCpu} />}
+            >
+              开始思辨分析
+            </Button>
+                    </Box>
+        )}
+      </VStack>
+    );
+  };
+        
+  // 改进辩论结果显示界面
+  const renderDebateResultStep = () => {
+    return (
+      <VStack spacing={6} align="stretch" mt={4}>
+    <Box borderWidth="1px" borderRadius="lg" p={4} bg={useColorModeValue('gray.50', 'white')}>
+      <Heading size="md" mb={3} color="purple.600">辩论分析结果</Heading>
+      
+          <Box 
+            borderWidth="1px" 
+            borderRadius="md" 
+            p={4} 
+            bg={bgColor} 
+            borderColor={borderColor}
+            mb={4}
+        maxHeight="500px"
+            overflowY="auto"
+        className="markdown-content"
+        sx={{
+          'h1, h2, h3, h4': {
+            color: 'purple.600',
+            fontWeight: 'bold',
+            mt: 4,
+            mb: 2
+          },
+          'ul, ol': {
+            pl: 5,
+            mb: 4
+          },
+          'blockquote': {
+            borderLeftWidth: '4px',
+            borderLeftColor: 'purple.200',
+            pl: 4,
+            py: 1,
+            my: 4,
+            bg: 'gray.50'
+          },
+          'code': {
+            fontFamily: 'mono',
+            bg: 'gray.100',
+            p: 1,
+            borderRadius: 'sm'
+          }
+        }}
+          >
+            <ReactMarkdown>{debateResult}</ReactMarkdown>
+          </Box>
+          
+          {/* 用户反馈 */}
+          <Box mb={4}>
+            <Text fontWeight="medium" mb={2}>这个分析对您有帮助吗�?/Text>
+            <HStack spacing={4}>
+            <Button
+                size="sm"
+            leftIcon={<Icon as={FiThumbsUp} />}
+              colorScheme={userFeedback === 'positive' ? 'green' : 'gray'}
+              variant={userFeedback === 'positive' ? 'solid' : 'outline'}
+              onClick={() => setUserFeedback('positive')}
+            >
+              有帮�?            </Button>
+            <Button
+                size="sm"
+            leftIcon={<Icon as={FiThumbsDown} />}
+              colorScheme={userFeedback === 'negative' ? 'red' : 'gray'}
+              variant={userFeedback === 'negative' ? 'solid' : 'outline'}
+              onClick={() => setUserFeedback('negative')}
+            >
+                不太有帮�?            </Button>
+          </HStack>
+        </Box>
+        
+          {/* 操作按钮 */}
+      <Flex justify="space-between" wrap="wrap" gap={2}>
+        <Button 
+          colorScheme="blue" 
+          leftIcon={<Icon as={FiSave} />}
+          onClick={createDebateNode}
+          isLoading={isGeneratingDebate}
+          loadingText="保存�?.."
+        >
+              保存到图�?            </Button>
+        <Button 
+          colorScheme="purple" 
+          leftIcon={<Icon as={FiDownload} />}
+          onClick={exportAnalysis}
+        >
+            导出分析
+          </Button>
+        <Button 
+          variant="outline" 
+          leftIcon={<Icon as={FiRefreshCw} />}
+          onClick={restart}
+        >
+              重新开�?            </Button>
+        </Flex>
+        </Box>
+      </VStack>
+    );
+  };
+
+  // 修改renderStepContent函数，根据步骤渲染不同内�?  const renderStepContent = () => {
+    switch (currentStep) {
+      case 1:
+        return renderPerspectivesStep();
+      case 2:
+        return renderDebateResultStep();
+      default:
+        return null;
+    }
+  };
+  
+  return (
+    <Drawer
+      isOpen={isOpen}
+      placement="right"
+      onClose={onClose}
+      size="lg"
+    >
+      <DrawerOverlay />
+      <DrawerContent>
+        <DrawerCloseButton />
+        <DrawerHeader borderBottomWidth="1px">
+          <Flex align="center">
+            <Icon as={FiGitBranch} mr={2} color={accentColor} />
+            <Text>多角度思考与辩论助手</Text>
+          </Flex>
+        </DrawerHeader>
+        
+        <DrawerBody>
+          {/* 步骤指示�?*/}
+          <Flex justify="center" mb={6}>
+            <HStack spacing={8}>
+              <VStack>
+                <Circle
+                  size="40px"
+                  bg={currentStep === 1 ? "purple.500" : "gray.200"}
+                  color={currentStep === 1 ? "white" : "gray.500"}
+                >
+                  <Text>1</Text>
+                </Circle>
+                <Text fontSize="sm" color={currentStep === 1 ? "purple.500" : "gray.500"}>
+                  定义话题
+                </Text>
+              </VStack>
+
+              <VStack>
+                <Circle
+                  size="40px"
+                  bg={currentStep === 2 ? "purple.500" : "gray.200"}
+                  color={currentStep === 2 ? "white" : "gray.500"}
+                >
+                  <Text>2</Text>
+                </Circle>
+                <Text fontSize="sm" color={currentStep === 2 ? "purple.500" : "gray.500"}>
+                  辩论分析
+                </Text>
+              </VStack>
+            </HStack>
+            </Flex>
+            
+          {/* 主要内容区域 */}
+          {renderStepContent()}
+        </DrawerBody>
+      </DrawerContent>
+    </Drawer>
+  );
+};
+
+export default DebateAssistant; 

@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 300" fill="none">
+  <!-- Central Node -->
+  <circle cx="250" cy="150" r="30" fill="#6B46C1" />
+  <text x="250" y="155" font-family="Arial" font-size="12" fill="white" text-anchor="middle">思维导图</text>
+  
+  <!-- Connection Lines -->
+  <line x1="250" y1="120" x2="250" y2="70" stroke="#6B46C1" stroke-width="2" />
+  <line x1="250" y1="180" x2="250" y2="230" stroke="#6B46C1" stroke-width="2" />
+  <line x1="280" y1="150" x2="350" y2="100" stroke="#6B46C1" stroke-width="2" />
+  <line x1="280" y1="150" x2="350" y2="200" stroke="#6B46C1" stroke-width="2" />
+  <line x1="220" y1="150" x2="150" y2="100" stroke="#6B46C1" stroke-width="2" />
+  <line x1="220" y1="150" x2="150" y2="200" stroke="#6B46C1" stroke-width="2" />
+  
+  <!-- Surrounding Nodes -->
+  <circle cx="250" cy="50" r="20" fill="#9F7AEA" />
+  <text x="250" y="55" font-family="Arial" font-size="10" fill="white" text-anchor="middle">创意</text>
+  
+  <circle cx="250" cy="250" r="20" fill="#9F7AEA" />
+  <text x="250" y="255" font-family="Arial" font-size="10" fill="white" text-anchor="middle">总结</text>
+  
+  <circle cx="370" cy="100" r="20" fill="#9F7AEA" />
+  <text x="370" y="105" font-family="Arial" font-size="10" fill="white" text-anchor="middle">分析</text>
+  
+  <circle cx="370" cy="200" r="20" fill="#9F7AEA" />
+  <text x="370" y="205" font-family="Arial" font-size="10" fill="white" text-anchor="middle">计划</text>
+  
+  <circle cx="130" cy="100" r="20" fill="#9F7AEA" />
+  <text x="130" y="105" font-family="Arial" font-size="10" fill="white" text-anchor="middle">问题</text>
+  
+  <circle cx="130" cy="200" r="20" fill="#9F7AEA" />
+  <text x="130" y="205" font-family="Arial" font-size="10" fill="white" text-anchor="middle">解决</text>
+  
+  <!-- Second Level Connections -->
+  <line x1="370" y1="80" x2="420" y2="50" stroke="#9F7AEA" stroke-width="1.5" />
+  <line x1="370" y1="120" x2="420" y2="150" stroke="#9F7AEA" stroke-width="1.5" />
+  <line x1="130" y1="80" x2="80" y2="50" stroke="#9F7AEA" stroke-width="1.5" />
+  <line x1="130" y1="120" x2="80" y2="150" stroke="#9F7AEA" stroke-width="1.5" />
+  
+  <!-- Third Level Nodes -->
+  <circle cx="440" cy="50" r="15" fill="#B794F4" />
+  <circle cx="440" cy="150" r="15" fill="#B794F4" />
+  <circle cx="60" cy="50" r="15" fill="#B794F4" />
+  <circle cx="60" cy="150" r="15" fill="#B794F4" />
+</svg> 
